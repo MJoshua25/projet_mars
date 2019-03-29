@@ -1,41 +1,58 @@
-var createError = require('http-errors');
-var express = require('express');
-var path = require('path');
-var cookieParser = require('cookie-parser');
-var logger = require('morgan');
+require('babel-register');
+var bodyParser = require('body-parser');
+const express = require('express');
+const morgan = require('morgan');
+const {success , error, checkAndChange} = require('./assets/functions');
+const config = require('./assets/config');
+const mysql = require('promise-mysql');
 
-var indexRouter = require('./routes/index');
-var usersRouter = require('./routes/users');
+mysql.createConnection(config.db)
+    .then((db) =>{
+        var app = express();
+        var UserRouter = express.Router();
+        let Users = require('./assets/classes/Users-class')(db, config);
+        let Forum = require('./assets/classes/Forum-class')(db, config);
+        let Articles = require('./assets/classes/Articles-class')(db, config);
 
-var app = express();
+        app.use(bodyParser.json());
+        app.use(bodyParser.urlencoded({ extended: true }));
 
-// view engine setup
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'twig');
+        app.use(morgan('dev'));
 
-app.use(logger('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
+        UserRouter.route('/')
 
-app.use('/', indexRouter);
-app.use('/users', usersRouter);
+            //afficher tous les utilisateurs
+            .get(async (req , res) => {
+                    let allUser = await Users.getAll()
+                    res.json(checkAndChange(allUser))
+            })
 
-// catch 404 and forward to error handler
-app.use(function(req, res, next) {
-  next(createError(404));
-});
+            //ajouter un utilisateur
+            .post(async (req , res) => {
+                    let addUser = await Users.add(req.body.nom, req.body.prenom, req.body.sexe, req.body.pseudo, new Date(req.body.naiss), req.body.email , req.body.pass)
+                    res.json(checkAndChange(addUser))
+            });
 
-// error handler
-app.use(function(err, req, res, next) {
-  // set locals, only providing error in development
-  res.locals.message = err.message;
-  res.locals.error = req.app.get('env') === 'development' ? err : {};
+        UserRouter.route('/:email')
+        //Afficher un membre
+            .get(async (req , res) =>{
+                    let user = await Users.getByEmail(req.params.email)
+                    res.json(checkAndChange(user))
+            })
 
-  // render the error page
-  res.status(err.status || 500);
-  res.render('error');
-});
+            //Modifier un membre
+            .put(async (req , res) => {
+                    let updateUser = await Users.update(req.params.email)
+                    res.json(checkAndChange(updateUser))
+            })
+            .delete(async (req , res) => {
+                    let deleteUser = await Users.delete(req.params.email)
+                    res.json(checkAndChange(deleteUser))
+            });
+        app.use(config.rootAPI + 'users' , UserRouter);
 
-module.exports = app;
+        app.listen(config.port, () => {
+            console.log("Started on port "+ config.port);
+        });
+    })
+    .catch(err => console.log(err.message));
